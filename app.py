@@ -1,4 +1,6 @@
 import streamlit as st
+import json
+import os
 
 # --- PAGE CONFIGURATION ---
 st.set_page_config(
@@ -7,61 +9,68 @@ st.set_page_config(
     layout="centered"
 )
 
+# --- FILE CONFIGURATION ---
+USERS_FILE = "users.json"
+
+def load_users():
+    """Loads users from a JSON file. Creates defaults if file doesn't exist."""
+    if os.path.exists(USERS_FILE):
+        with open(USERS_FILE, "r") as f:
+            return json.load(f)
+    else:
+        # Default users
+        defaults = {
+            "ayesha": {"password": "Ayesha@910", "role": "admin"},
+            "staff": {"password": "staff@Alzamin", "role": "staff"}
+        }
+        save_users(defaults)
+        return defaults
+
+def save_users(users_dict):
+    """Saves the user dictionary to the JSON file permanently."""
+    with open(USERS_FILE, "w") as f:
+        json.dump(users_dict, f, indent=4)
+
 # --- INITIALIZE SESSION STATE ---
 def init_session_state():
-    # Store users and roles
     if "users" not in st.session_state:
-        st.session_state["users"] = {
-            "ayesha": {"password": "Ayesha@910", "role": "admin"},
-            "staff": {"password": "Staff@Alzamin", "role": "staff"}
-        }
+        st.session_state["users"] = load_users()
     
-    # Track login status
     if "logged_in" not in st.session_state:
         st.session_state["logged_in"] = False
     if "current_user" not in st.session_state:
         st.session_state["current_user"] = None
     if "current_role" not in st.session_state:
         st.session_state["current_role"] = None
+    if "admin_msg" not in st.session_state:
+        st.session_state["admin_msg"] = None
 
-# --- CUSTOM CSS (Branding + Security) ---
+# --- CUSTOM CSS ---
 def inject_custom_css(hide_sidebar=False):
     css = """
     <style>
-    /* Primary text and header colors */
     h1, h2, h3, h4, h5, h6 { color: #f47b20; font-family: 'Segoe UI', sans-serif; }
     .stApp { background-color: #fdfbf9; }
-    
-    /* Custom Card Styling */
     .theme-card {
-        background:#ffffff;
-        border:1px solid #f1e4d8;
-        border-radius:18px;
-        padding:22px;
-        box-shadow:0 8px 30px rgba(244,123,32,0.08);
-        margin-bottom: 20px;
+        background:#ffffff; border:1px solid #f1e4d8; border-radius:18px;
+        padding:22px; box-shadow:0 8px 30px rgba(244,123,32,0.08); margin-bottom: 20px;
     }
-    
-    /* Button Styling */
     .stButton>button, .stFormSubmitButton>button {
         background-color: #f47b20; color: white; border-radius: 8px; border: none; font-weight: bold;
     }
     .stButton>button:hover, .stFormSubmitButton>button:hover { background-color: #d96314; color: white; }
     """
-    
-    # Hide the sidebar entirely if the user is not logged in to prevent navigation
     if hide_sidebar:
         css += """
         [data-testid="collapsedControl"] { display: none; }
         [data-testid="stSidebar"] { display: none; }
         """
-        
     css += "</style>"
     st.markdown(css, unsafe_allow_html=True)
 
 # --- LOGIN PAGE ---
 def login_page():
-    inject_custom_css(hide_sidebar=True) # Lock down navigation
+    inject_custom_css(hide_sidebar=True) 
     
     st.markdown("""
     <div class="theme-card" style="text-align: center;">
@@ -76,7 +85,10 @@ def login_page():
         submit = st.form_submit_button("Secure Login", use_container_width=True)
         
         if submit:
+            # Always reload users from file just in case it was updated
+            st.session_state["users"] = load_users()
             users = st.session_state["users"]
+            
             if username in users and users[username]["password"] == password:
                 st.session_state["logged_in"] = True
                 st.session_state["current_user"] = username
@@ -101,6 +113,11 @@ def admin_panel():
         <p style='color:#555;'>Manage employee access and roles.</p>
     </div>
     """, unsafe_allow_html=True)
+    
+    # Display persistent messages
+    if st.session_state.get("admin_msg"):
+        st.success(st.session_state["admin_msg"])
+        st.session_state["admin_msg"] = None # Clear it after showing
     
     # 1. View Users
     st.markdown("#### 👥 Current Users")
@@ -127,8 +144,11 @@ def admin_panel():
                 elif new_username in st.session_state["users"]:
                     st.error(f"⚠️ User '{new_username}' already exists.")
                 else:
+                    # Update state AND save to file permanently
                     st.session_state["users"][new_username] = {"password": new_password, "role": new_role}
-                    st.success(f"✅ User '{new_username}' added successfully!")
+                    save_users(st.session_state["users"])
+                    
+                    st.session_state["admin_msg"] = f"✅ User '{new_username}' added permanently!"
                     st.rerun()
                     
     with col2:
@@ -142,8 +162,11 @@ def admin_panel():
                 elif user_to_remove == st.session_state["current_user"]:
                     st.error("⚠️ You cannot delete your own active account.")
                 else:
+                    # Delete from state AND save to file permanently
                     del st.session_state["users"][user_to_remove]
-                    st.success(f"✅ User '{user_to_remove}' removed successfully!")
+                    save_users(st.session_state["users"])
+                    
+                    st.session_state["admin_msg"] = f"✅ User '{user_to_remove}' removed permanently!"
                     st.rerun()
 
 # --- MAIN LANDING PAGE ---
@@ -174,7 +197,6 @@ def landing_page():
     if st.session_state["current_role"] == "admin":
         admin_panel()
     else:
-        # Staff message
         st.info("👋 Welcome Staff! Please use the sidebar to access the Order Input and Reports modules.")
 
 # --- APP EXECUTION ---
