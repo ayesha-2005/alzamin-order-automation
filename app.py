@@ -12,8 +12,8 @@ def init_session_state():
     # Store users and roles
     if "users" not in st.session_state:
         st.session_state["users"] = {
-            "ashy": {"password": "pass123", "role": "admin"},
-            "staff": {"password": "abcd", "role": "staff"}
+            "ayesha": {"password": "Ayesha@910", "role": "admin"},
+            "staff": {"password": "Staff@Alzamin", "role": "staff"}
         }
     
     # Track login status
