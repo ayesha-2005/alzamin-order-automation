@@ -90,7 +90,7 @@ def create_pdf(order_df, inv_number, inv_date, customer_name, payment_status, to
     pdf.set_text_color(119, 119, 119)
     pdf.set_font("Arial", '', 10)
     pdf.cell(0, 6, "Serving Happiness Every Day!", ln=True, align='C')
-    pdf.cell(0, 6, "Contact: info@alzamin.com | Tel: +92 300 1234567", ln=True, align='C')
+    pdf.cell(0, 6, "Contact: alzaminbakers@gmail.com | Tel: +92 309 7405531", ln=True, align='C')
     pdf.ln(10)
     
     # Customer Info
