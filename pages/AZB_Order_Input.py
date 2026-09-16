@@ -13,10 +13,11 @@ from pathlib import Path
 
 import pandas as pd
 import streamlit as st
-import streamlit as st
+
 # Protect page
 if not st.session_state.get("logged_in"):
     st.switch_page("app.py") # Kicks them back to login
+
 # ----------------------------------------------------------------
 # Make sure the project root (parent of /pages) is importable
 # ----------------------------------------------------------------
@@ -39,7 +40,7 @@ EXCEL_FILE = ROOT_DIR / "orders.xlsx"
 EXCEL_COLUMNS = ["Order ID", "Customer", "Item", "Quantity", "Payment", "Payment Status", "Timestamp"]
 
 # ----------------------------------------------------------------
-# Custom CSS (unchanged)
+# Custom CSS
 # ----------------------------------------------------------------
 st.markdown(
     """
@@ -69,63 +70,12 @@ st.markdown(
         margin: 0;
     }
 
-    .az-card {
-        background: #FFFDF8;
-        border-radius: 18px;
-        padding: 1.6rem 1.8rem;
-        box-shadow: 0 6px 18px rgba(210, 130, 50, 0.15);
-        border: 1px solid #FFE3C2;
-        margin-bottom: 1.6rem;
-    }
-    .az-card h3 {
-        color: #D2691E;
-        margin-top: 0;
-        margin-bottom: 1rem;
-        font-weight: 700;
-    }
-
-    .az-field {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding: 0.65rem 1rem;
-        background: #FFF3E1;
-        border-radius: 12px;
-        margin-bottom: 0.6rem;
-        border-left: 5px solid #FF8C42;
-    }
-    .az-field-label {
-        font-weight: 700;
-        color: #8B4513;
-        font-size: 0.95rem;
-    }
-    .az-field-value {
-        font-weight: 600;
-        color: #2E2620;
-        font-size: 0.98rem;
-        text-align: right;
-    }
-
-    .az-item-row {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding: 0.55rem 1rem;
-        background: #FFEFD9;
-        border-radius: 10px;
-        margin-bottom: 0.5rem;
-        border-left: 4px solid #FFB877;
-    }
-    .az-item-name {
-        font-weight: 600;
-        color: #6B4226;
-    }
-    .az-item-qty {
-        font-weight: 700;
-        color: #D2691E;
-        background: #FFF8ED;
-        border-radius: 8px;
-        padding: 0.1rem 0.6rem;
+    /* Style the new larger Text Area to match the theme */
+    .stTextArea textarea, .stTextInput input {
+        border-radius: 12px !important;
+        border: 1.5px solid #FFD3A5 !important;
+        padding: 0.8rem !important;
+        background-color: #FFFDF8 !important;
     }
 
     div.stButton > button, div.stFormSubmitButton > button {
@@ -141,12 +91,6 @@ st.markdown(
     div.stButton > button:hover, div.stFormSubmitButton > button:hover {
         background: linear-gradient(135deg, #FF6B35 0%, #E85D2F 100%);
         color: white;
-    }
-
-    .stTextInput input {
-        border-radius: 12px !important;
-        border: 1.5px solid #FFD3A5 !important;
-        padding: 0.6rem !important;
     }
 
     .az-footer {
@@ -248,20 +192,19 @@ def save_to_excel(order_dict, timestamp):
     return order_id
 
 # ----------------------------------------------------------------
-# Input card
+# Input card (Removed confusing raw HTML wrappers)
 # ----------------------------------------------------------------
-st.markdown('<div class="az-card">', unsafe_allow_html=True)
 st.markdown("### 📝 Enter Order Details")
 
 with st.form(key="order_input_form", clear_on_submit=False):
-    order_text = st.text_input(
-        'Type the order exactly as received (e.g. "Ali 2 burgers 3 shawarmas 1 coke 1500 paid")',
-        placeholder="e.g. Sara 1 pizza 2 fries 3 drinks 1200 unpaid",
+    # Upgraded to text_area for better visibility
+    order_text = st.text_area(
+        'Type the order exactly as received:',
+        placeholder="e.g. Ali 2 burgers 3 shawarmas 1 coke 1500 paid",
+        height=120,
         key="order_text_input"
     )
     submitted = st.form_submit_button("🔍 Extract Order")
-
-st.markdown("</div>", unsafe_allow_html=True)
 
 # ----------------------------------------------------------------
 # Extraction (no auto-save)
@@ -280,12 +223,12 @@ if submitted:
             st.error(f"😕 Sorry, we couldn't process that order. ({exc})")
 
 # ----------------------------------------------------------------
-# Editable Review Section
+# Editable Review Section (Removed confusing raw HTML wrappers)
 # ----------------------------------------------------------------
 if st.session_state.get("pending_order"):
     order = st.session_state["pending_order"]
-
-    st.markdown('<div class="az-card">', unsafe_allow_html=True)
+    
+    st.markdown("---")
     st.markdown("### ✏️ Review & Edit Order Before Saving")
 
     # Editable top fields
@@ -323,6 +266,8 @@ if st.session_state.get("pending_order"):
             )
         edited_items.append({"item": item_name, "quantity": qty})
 
+    st.markdown("<br>", unsafe_allow_html=True)
+
     # Confirm & Save + FULL CLEAR
     if st.button("✅ Confirm & Save"):
         final_order = {
@@ -351,8 +296,6 @@ if st.session_state.get("pending_order"):
 
         except Exception as exc:
             st.error(f"⚠️ Saving failed: {exc}")
-
-    st.markdown("</div>", unsafe_allow_html=True)
 
 # ----------------------------------------------------------------
 # Footer
