@@ -4,7 +4,7 @@ pages/1_📦_Order_Input.py
 AL Zamin Bakers & Fast Food - Order Automation System
 Multi-page dashboard | Page: Order Input
 
-Uses backend extract.py + auto-calculates payment totals using prices.json.
+Menu-aware extraction + auto-calculating totals + editable review workflow.
 """
 
 import sys
@@ -21,7 +21,7 @@ if not st.session_state.get("logged_in"):
     st.switch_page("app.py")
 
 # ----------------------------------------------------------------
-# Make sure the project root (parent of /pages) is importable
+# Make sure project root is importable
 # ----------------------------------------------------------------
 ROOT_DIR = Path(__file__).resolve().parent.parent
 if str(ROOT_DIR) not in sys.path:
@@ -43,7 +43,7 @@ PRICES_FILE = ROOT_DIR / "prices.json"
 EXCEL_COLUMNS = ["Order ID", "Customer", "Item", "Quantity", "Payment", "Payment Status", "Timestamp"]
 
 # ----------------------------------------------------------------
-# Custom CSS
+# Custom CSS (Theme Match)
 # ----------------------------------------------------------------
 st.markdown(
     """
@@ -228,7 +228,7 @@ st.markdown("### 📝 Enter Order Details")
 with st.form(key="order_input_form", clear_on_submit=False):
     order_text = st.text_area(
         'Type the order exactly as received:',
-        placeholder="e.g. Ali 2 burgers 3 shawarmas 1 coke paid",
+        placeholder="e.g. Ali 2 burgers 3 shawarmas 1 coke 1 disposable glass paid",
         height=120,
         key="order_text_input"
     )
@@ -244,7 +244,6 @@ if submitted:
         st.warning("⚠️ Please type an order before submitting.")
     else:
         try:
-            # Calls your clean extract.py function
             extracted = extract_order(order_text)
             st.session_state["pending_order"] = extracted
         except Exception as exc:
@@ -256,14 +255,12 @@ if submitted:
 if st.session_state.get("pending_order"):
     order = st.session_state["pending_order"]
     
-    # Auto-calculate payment based on items and prices.json
     auto_total = calculate_order_total(order.get("items", []))
 
     st.markdown("---")
     st.markdown("### ✏️ Review & Edit Order Before Saving")
 
     customer = st.text_input("Customer", value=safe_value(order.get("customer")))
-    # Pre-fills the calculated total automatically!
     payment = st.number_input("Total Payment (PKR)", value=float(auto_total), step=10.0)
     
     raw_status = str(order.get("payment_status", "pending")).lower()
@@ -277,7 +274,7 @@ if st.session_state.get("pending_order"):
         index=status_index
     )
 
-    # Editable items
+    # Dynamic Items Table / Fields (Supports arbitrary number of extracted items)
     st.markdown("### 🍔 Items")
     edited_items = []
     for idx, entry in enumerate(order.get("items", [])):
