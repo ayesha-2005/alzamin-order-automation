@@ -1,200 +1,190 @@
-"""
-app.py
-------------------------------------------------------------
-AL Zamin Bakers & Fast Food - Order Automation System
-Multi-page dashboard | Home / Landing Page
-
-This file is now ONLY the landing page for the multi-page app.
-All functional logic lives in its own page under /pages:
-    pages/1_📦_Order_Input.py   -> order entry, extraction, Excel saving
-    pages/2_...                 -> Daily Sales Report / analytics, etc.
-
-app.py intentionally contains no extraction logic, no forms, and no
-Excel or analytics code - it just sets the theme and welcomes the
-user, pointing them to the sidebar for navigation.
-"""
-
 import streamlit as st
 
-# ----------------------------------------------------------------
-# Page config
-# ----------------------------------------------------------------
+# --- PAGE CONFIGURATION ---
 st.set_page_config(
-    page_title="AL Zamin Bakers & Fast Food | Order Automation",
+    page_title="AL Zamin | Dashboard",
     page_icon="🍔",
-    layout="centered",
+    layout="centered"
 )
 
-# ----------------------------------------------------------------
-# Custom CSS - orange / cream branded theme (shared across all pages)
-# ----------------------------------------------------------------
-st.markdown(
-    """
+# --- INITIALIZE SESSION STATE ---
+def init_session_state():
+    # Store users and roles
+    if "users" not in st.session_state:
+        st.session_state["users"] = {
+            "ashy": {"password": "pass123", "role": "admin"},
+            "staff": {"password": "abcd", "role": "staff"}
+        }
+    
+    # Track login status
+    if "logged_in" not in st.session_state:
+        st.session_state["logged_in"] = False
+    if "current_user" not in st.session_state:
+        st.session_state["current_user"] = None
+    if "current_role" not in st.session_state:
+        st.session_state["current_role"] = None
+
+# --- CUSTOM CSS (Branding + Security) ---
+def inject_custom_css(hide_sidebar=False):
+    css = """
     <style>
-    .stApp {
-        background: linear-gradient(180deg, #FFF8ED 0%, #FFF1DC 100%);
+    /* Primary text and header colors */
+    h1, h2, h3, h4, h5, h6 { color: #f47b20; font-family: 'Segoe UI', sans-serif; }
+    .stApp { background-color: #fdfbf9; }
+    
+    /* Custom Card Styling */
+    .theme-card {
+        background:#ffffff;
+        border:1px solid #f1e4d8;
+        border-radius:18px;
+        padding:22px;
+        box-shadow:0 8px 30px rgba(244,123,32,0.08);
+        margin-bottom: 20px;
     }
-
-    /* Header */
-    .az-header {
-        text-align: center;
-        padding: 2.2rem 1.5rem 1.8rem 1.5rem;
-        background: linear-gradient(135deg, #FF8C42 0%, #FF6B35 100%);
-        border-radius: 20px;
-        box-shadow: 0 8px 20px rgba(255, 107, 53, 0.25);
-        margin-bottom: 1.8rem;
+    
+    /* Button Styling */
+    .stButton>button, .stFormSubmitButton>button {
+        background-color: #f47b20; color: white; border-radius: 8px; border: none; font-weight: bold;
     }
-    .az-header h1 {
-        color: #FFF8ED;
-        font-size: 2.3rem;
-        margin-bottom: 0.3rem;
-        font-weight: 800;
-        letter-spacing: 0.5px;
-    }
-    .az-header p {
-        color: #FFEBD6;
-        font-size: 1.05rem;
-        margin: 0;
-    }
-
-    /* Card containers */
-    .az-card {
-        background: #FFFDF8;
-        border-radius: 18px;
-        padding: 1.8rem 2rem;
-        box-shadow: 0 6px 18px rgba(210, 130, 50, 0.15);
-        border: 1px solid #FFE3C2;
-        margin-bottom: 1.6rem;
-        text-align: center;
-    }
-    .az-card h3 {
-        color: #D2691E;
-        margin-top: 0;
-        margin-bottom: 0.8rem;
-        font-weight: 700;
-    }
-    .az-card p {
-        color: #5A4636;
-        font-size: 1rem;
-        line-height: 1.6rem;
-        margin-bottom: 0;
-    }
-
-    /* Sidebar hint banner */
-    .az-hint {
-        text-align: center;
-        background: #FFF3E1;
-        border-left: 5px solid #FF8C42;
-        border-radius: 12px;
-        padding: 0.9rem 1.2rem;
-        color: #8B4513;
-        font-weight: 600;
-        margin-bottom: 1.8rem;
-    }
-
-    /* Module list */
-    .az-module {
-        display: flex;
-        align-items: center;
-        gap: 0.7rem;
-        padding: 0.7rem 1rem;
-        background: #FFF3E1;
-        border-radius: 12px;
-        margin-bottom: 0.6rem;
-        border-left: 5px solid #FF8C42;
-        color: #2E2620;
-        font-weight: 600;
-    }
-
-    /* Footer */
-    .az-footer {
-        text-align: center;
-        margin-top: 2.2rem;
-        padding: 1rem;
-        color: #A9754F;
-        font-size: 0.88rem;
-        border-top: 1px dashed #FFD3A5;
-    }
-    .az-footer b {
-        color: #D2691E;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
-
-# ----------------------------------------------------------------
-# Header
-# ----------------------------------------------------------------
-st.markdown(
+    .stButton>button:hover, .stFormSubmitButton>button:hover { background-color: #d96314; color: white; }
     """
-    <div class="az-header">
-        <h1>🍔 AL Zamin Bakers &amp; Fast Food 🥐</h1>
-        <p>Order Automation System — Home</p>
+    
+    # Hide the sidebar entirely if the user is not logged in to prevent navigation
+    if hide_sidebar:
+        css += """
+        [data-testid="collapsedControl"] { display: none; }
+        [data-testid="stSidebar"] { display: none; }
+        """
+        
+    css += "</style>"
+    st.markdown(css, unsafe_allow_html=True)
+
+# --- LOGIN PAGE ---
+def login_page():
+    inject_custom_css(hide_sidebar=True) # Lock down navigation
+    
+    st.markdown("""
+    <div class="theme-card" style="text-align: center;">
+        <h1 style='margin-top:0;'>🥐 AL Zamin Portal 🍔</h1>
+        <p style='color:#555;'>Please enter your credentials to access the system.</p>
     </div>
-    """,
-    unsafe_allow_html=True,
-)
+    """, unsafe_allow_html=True)
+    
+    with st.form("login_form"):
+        username = st.text_input("Username").strip().lower()
+        password = st.text_input("Password", type="password")
+        submit = st.form_submit_button("Secure Login", use_container_width=True)
+        
+        if submit:
+            users = st.session_state["users"]
+            if username in users and users[username]["password"] == password:
+                st.session_state["logged_in"] = True
+                st.session_state["current_user"] = username
+                st.session_state["current_role"] = users[username]["role"]
+                st.success("✅ Login successful! Loading dashboard...")
+                st.rerun()
+            else:
+                st.error("❌ Access denied. Invalid username or password.")
 
-# ----------------------------------------------------------------
-# Sidebar navigation hint
-# ----------------------------------------------------------------
-st.markdown(
-    """
-    <div class="az-hint">
-        👈 Use the sidebar to access all modules.
+# --- LOGOUT LOGIC ---
+def logout():
+    st.session_state["logged_in"] = False
+    st.session_state["current_user"] = None
+    st.session_state["current_role"] = None
+    st.rerun()
+
+# --- ADMIN PANEL ---
+def admin_panel():
+    st.markdown("""
+    <div class="theme-card">
+        <h3 style='margin-top:0;'>⚙️ System Administration</h3>
+        <p style='color:#555;'>Manage employee access and roles.</p>
     </div>
-    """,
-    unsafe_allow_html=True,
-)
+    """, unsafe_allow_html=True)
+    
+    # 1. View Users
+    st.markdown("#### 👥 Current Users")
+    display_users = []
+    for user, details in st.session_state["users"].items():
+        display_users.append({"Username": user, "Role": details["role"].capitalize()})
+    st.dataframe(display_users, use_container_width=True, hide_index=True)
+    
+    st.markdown("<br>", unsafe_allow_html=True)
+    
+    # 2. Add / Remove Users
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("**➕ Add New User**")
+        with st.form("add_user_form", clear_on_submit=True):
+            new_username = st.text_input("New Username").strip().lower()
+            new_password = st.text_input("New Password", type="password")
+            new_role = st.selectbox("Assign Role", ["staff", "admin"])
+            
+            if st.form_submit_button("Add User", use_container_width=True):
+                if not new_username or not new_password:
+                    st.warning("⚠️ Username and Password are required.")
+                elif new_username in st.session_state["users"]:
+                    st.error(f"⚠️ User '{new_username}' already exists.")
+                else:
+                    st.session_state["users"][new_username] = {"password": new_password, "role": new_role}
+                    st.success(f"✅ User '{new_username}' added successfully!")
+                    st.rerun()
+                    
+    with col2:
+        st.markdown("**🗑️ Remove User**")
+        with st.form("remove_user_form"):
+            user_to_remove = st.selectbox("Select User", options=list(st.session_state["users"].keys()))
+            
+            if st.form_submit_button("Remove User", use_container_width=True):
+                if user_to_remove == "ayesha":
+                    st.error("⚠️ Cannot remove the master admin ('ayesha').")
+                elif user_to_remove == st.session_state["current_user"]:
+                    st.error("⚠️ You cannot delete your own active account.")
+                else:
+                    del st.session_state["users"][user_to_remove]
+                    st.success(f"✅ User '{user_to_remove}' removed successfully!")
+                    st.rerun()
 
-# ----------------------------------------------------------------
-# Welcome card
-# ----------------------------------------------------------------
-st.markdown(
-    """
-    <div class="az-card">
-        <h3>👋 Welcome</h3>
-        <p>
-            This is the home of the AL Zamin Bakers &amp; Fast Food Order
-            Automation System — a simple, friendly way to turn free-text
-            orders into structured records, track daily sales, and keep
-            everything organized in one place.
+# --- MAIN LANDING PAGE ---
+def landing_page():
+    inject_custom_css(hide_sidebar=False)
+    
+    # Sidebar Profile & Logout
+    st.sidebar.markdown(f"### 👤 Profile")
+    st.sidebar.markdown(f"**User:** {st.session_state['current_user']}")
+    st.sidebar.markdown(f"**Role:** {st.session_state['current_role'].capitalize()}")
+    if st.sidebar.button("🚪 Logout", use_container_width=True):
+        logout()
+    
+    st.sidebar.markdown("---")
+    st.sidebar.info("👈 **Hint:** Use the sidebar menu above to navigate between system modules.")
+    
+    # Main Welcome Content
+    st.markdown("""
+    <div class="theme-card" style="text-align: center;">
+        <h1 style='margin-top:0;'>👋 Welcome to AL Zamin Bakers & Fast Food</h1>
+        <p style='color:#555; font-size: 16px;'>
+            Your central hub for order automation, daily sales tracking, and restaurant insights.
         </p>
     </div>
-    """,
-    unsafe_allow_html=True,
-)
+    """, unsafe_allow_html=True)
+    
+    # Show Admin Panel ONLY if role is admin
+    if st.session_state["current_role"] == "admin":
+        admin_panel()
+    else:
+        # Staff message
+        st.info("👋 Welcome Staff! Please use the sidebar to access the Order Input and Reports modules.")
 
-# ----------------------------------------------------------------
-# What you'll find in the sidebar
-# ----------------------------------------------------------------
-st.markdown(
-    """
-    <div class="az-card">
-        <h3>🧭 What's in the sidebar</h3>
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
+# --- APP EXECUTION ---
+def main():
+    init_session_state()
+    
+    if not st.session_state["logged_in"]:
+        login_page()
+    else:
+        landing_page()
 
-st.markdown(
-    """
-    <div class="az-module">📦 Order Input — type an order and save it automatically</div>
-    <div class="az-module">📊 Daily Sales Report — see today's totals, top items, and top customers</div>
-    """,
-    unsafe_allow_html=True,
-)
-
-# ----------------------------------------------------------------
-# Footer
-# ----------------------------------------------------------------
-st.markdown(
-    """
-    <div class="az-footer">
-        🍔🥐 <b>AL Zamin Bakers &amp; Fast Food</b> — Order Automation System<br>
-        Crafted with care, served with speed.
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
+if __name__ == "__main__":
+    main()

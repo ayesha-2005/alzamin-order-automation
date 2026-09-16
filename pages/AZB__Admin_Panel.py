@@ -3,7 +3,10 @@ import pandas as pd
 import os
 import io
 from datetime import datetime
-
+import streamlit as st
+# Protect page + Enforce Role
+if not st.session_state.get("logged_in") or st.session_state.get("current_role") != "admin":
+    st.switch_page("app.py") # Kicks non-admins and logged-out users back to home
 # --- PAGE CONFIGURATION ---
 st.set_page_config(
     page_title="Admin Panel | AL Zamin",

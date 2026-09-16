@@ -4,7 +4,10 @@ from pathlib import Path
  
 import pandas as pd
 import streamlit as st
- 
+import streamlit as st
+# Protect page + Enforce Role
+if not st.session_state.get("logged_in") or st.session_state.get("current_role") != "admin":
+    st.switch_page("app.py") # Kicks non-admins and logged-out users back to home
 # ----------------------------------------------------------------
 # Page config
 # ----------------------------------------------------------------

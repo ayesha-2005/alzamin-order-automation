@@ -4,7 +4,10 @@ import os
 from datetime import datetime
 from fpdf import FPDF
 import base64
-
+import streamlit as st
+# Protect page
+if not st.session_state.get("logged_in"):
+    st.switch_page("app.py") # Kicks them back to login
 # --- PAGE CONFIGURATION ---
 st.set_page_config(
     page_title="Invoice Generator | AL Zamin",

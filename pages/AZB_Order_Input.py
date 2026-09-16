@@ -13,7 +13,10 @@ from pathlib import Path
 
 import pandas as pd
 import streamlit as st
-
+import streamlit as st
+# Protect page
+if not st.session_state.get("logged_in"):
+    st.switch_page("app.py") # Kicks them back to login
 # ----------------------------------------------------------------
 # Make sure the project root (parent of /pages) is importable
 # ----------------------------------------------------------------
