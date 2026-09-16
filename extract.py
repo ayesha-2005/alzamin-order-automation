@@ -6,35 +6,6 @@ AL Zamin Bakers & Fast Food - Order Automation System
 extract_order(text) parses a free-text order that may contain
 MULTIPLE item-quantity pairs (e.g. "2 burgers 3 shawarmas 1 coke")
 and returns one structured dict per order.
-
-NOTE - schema change from earlier versions:
-    Old shape: {"customer", "item", "quantity", "payment", "payment_status"}
-    New shape: {"customer", "items": [{"item", "quantity"}, ...],
-                "payment", "payment_status"}
-This is a breaking change for any code that expects a single
-"item"/"quantity" field (e.g. the Order Input page's Excel-saving
-logic) - that page needs updating to loop over "items" and/or
-flatten them when writing rows.
-
-Supported example formats:
-    "Ali 2 burgers 3 shawarmas 1 coke 1500 paid"
-    "Sara 1 pizza 2 fries 3 drinks 1200 unpaid"
-
-Field rules:
-    customer        -> first capitalized word in the text
-    items           -> repeating <number> <word(s)> pairs found
-                       before the payment number; each becomes
-                       {"item": ..., "quantity": ...}
-    payment         -> the number immediately followed by 'rs',
-                       otherwise the last number before the
-                       payment-status word (or the last number
-                       overall if no status word is found)
-    payment_status  -> last word matching {paid, payed, pending,
-                       unpaid, notpaid}
-
-extract_order() always returns a single dict (never a list).
-Any field that can't be found is None ("items" is [] when no
-item-quantity pairs are found, since it's a list-typed field).
 """
 
 import re
@@ -80,7 +51,6 @@ def _find_payment(text, tokens, numeric_indices, status_idx):
     - the number immediately followed by 'rs', if present
     - otherwise the last number before the payment-status word
       (or the last number overall, if there's no status word)
-    Returns payment_idx (int) or None.
     """
     if not numeric_indices:
         return None
@@ -102,32 +72,29 @@ def _find_payment(text, tokens, numeric_indices, status_idx):
 
 def _extract_items(tokens, numeric_indices, payment_idx, status_idx):
     """
-    Walk the numeric tokens that come BEFORE the payment number.
-    Each one is a quantity; the words up to the next numeric token
-    (or up to the payment number) form that item's name. Supports
-    both single-word ("burgers") and multi-word ("Big shawarmas")
-    item names.
+    Walk the numeric tokens that come BEFORE the payment number or status.
+    Each one is a quantity; words up to the next number form the item's name.
     """
-    item_number_indices = [
-        i for i in numeric_indices 
-        if i != payment_idx and (payment_idx is None or i < payment_idx)
-    ]
+    # Determine the cutoff boundary: items should only be parsed before the payment index or status index
+    cutoff_idx = len(tokens)
+    if payment_idx is not None and status_idx is not None:
+        cutoff_idx = min(payment_idx, status_idx)
+    elif payment_idx is not None:
+        cutoff_idx = payment_idx
+    elif status_idx is not None:
+        cutoff_idx = status_idx
+
+    item_number_indices = [i for i in numeric_indices if i < cutoff_idx]
 
     items = []
     for pos, idx in enumerate(item_number_indices):
         quantity = _to_number(tokens[idx])
 
-        # the item's words run from just after this number to just
-        # before the next item-number, or the payment number, or the
-        # end of the tokens if neither exists
+        # Find the boundary for the current item name tokens
         if pos + 1 < len(item_number_indices):
             end = item_number_indices[pos + 1]
-        elif payment_idx is not None:
-            end = payment_idx
-        elif status_idx is not None:
-            end = status_idx
         else:
-            end = len(tokens)
+            end = cutoff_idx
 
         name_tokens = tokens[idx + 1:end]
         item_name = " ".join(name_tokens).strip()
@@ -148,13 +115,8 @@ def _extract_customer(tokens):
 
 def extract_order(text):
     """
-    Parse a free-text order (possibly with multiple item-quantity
-    pairs) and return a dict with:
-        customer, items (list of {item, quantity}), payment,
-        payment_status.
-
-    Always returns a single dict (never a list). Missing scalar
-    fields are None; "items" is [] when no pairs were found.
+    Parse a free-text order and return a dict with:
+        customer, items (list of {item, quantity}), payment, payment_status.
     """
     if not text:
         text = ""
@@ -177,7 +139,6 @@ def extract_order(text):
             "payment_status": payment_status,
         }
     except Exception:
-        # Never crash the caller - return a safe, empty structure instead.
         return {
             "customer": None,
             "items": [],
@@ -190,7 +151,7 @@ if __name__ == "__main__":
     import json
 
     samples = [
-        "Ali 2 burgers 3 shawarmas 1 coke 1500 paid",
+        "Ali 2 burgers 3 shawarmas 1 coke regular paid",
         "Sara 1 pizza 2 fries 3 drinks 1200 unpaid",
     ]
     for s in samples:
