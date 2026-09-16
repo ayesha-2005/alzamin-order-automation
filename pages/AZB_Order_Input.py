@@ -4,27 +4,29 @@ pages/1_📦_Order_Input.py
 AL Zamin Bakers & Fast Food - Order Automation System
 Multi-page dashboard | Page: Order Input
 
-Updated for editable review + confirm & save workflow + full clear after save + persistent success message.
+Updated for smart regex extraction, auto-calculating totals, and full clear after save.
 """
 
 import sys
+import re
+import json
+import os
 from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
 import streamlit as st
-import streamlit as st
+
 # Protect page
 if not st.session_state.get("logged_in"):
-    st.switch_page("app.py") # Kicks them back to login
+    st.switch_page("app.py")
+
 # ----------------------------------------------------------------
 # Make sure the project root (parent of /pages) is importable
 # ----------------------------------------------------------------
 ROOT_DIR = Path(__file__).resolve().parent.parent
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
-
-from extract import extract_order  # noqa: E402
 
 # ----------------------------------------------------------------
 # Page config
@@ -36,10 +38,11 @@ st.set_page_config(
 )
 
 EXCEL_FILE = ROOT_DIR / "orders.xlsx"
+PRICES_FILE = ROOT_DIR / "prices.json"
 EXCEL_COLUMNS = ["Order ID", "Customer", "Item", "Quantity", "Payment", "Payment Status", "Timestamp"]
 
 # ----------------------------------------------------------------
-# Custom CSS (unchanged)
+# Custom CSS
 # ----------------------------------------------------------------
 st.markdown(
     """
@@ -69,63 +72,11 @@ st.markdown(
         margin: 0;
     }
 
-    .az-card {
-        background: #FFFDF8;
-        border-radius: 18px;
-        padding: 1.6rem 1.8rem;
-        box-shadow: 0 6px 18px rgba(210, 130, 50, 0.15);
-        border: 1px solid #FFE3C2;
-        margin-bottom: 1.6rem;
-    }
-    .az-card h3 {
-        color: #D2691E;
-        margin-top: 0;
-        margin-bottom: 1rem;
-        font-weight: 700;
-    }
-
-    .az-field {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding: 0.65rem 1rem;
-        background: #FFF3E1;
-        border-radius: 12px;
-        margin-bottom: 0.6rem;
-        border-left: 5px solid #FF8C42;
-    }
-    .az-field-label {
-        font-weight: 700;
-        color: #8B4513;
-        font-size: 0.95rem;
-    }
-    .az-field-value {
-        font-weight: 600;
-        color: #2E2620;
-        font-size: 0.98rem;
-        text-align: right;
-    }
-
-    .az-item-row {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding: 0.55rem 1rem;
-        background: #FFEFD9;
-        border-radius: 10px;
-        margin-bottom: 0.5rem;
-        border-left: 4px solid #FFB877;
-    }
-    .az-item-name {
-        font-weight: 600;
-        color: #6B4226;
-    }
-    .az-item-qty {
-        font-weight: 700;
-        color: #D2691E;
-        background: #FFF8ED;
-        border-radius: 8px;
-        padding: 0.1rem 0.6rem;
+    .stTextArea textarea, .stTextInput input {
+        border-radius: 12px !important;
+        border: 1.5px solid #FFD3A5 !important;
+        padding: 0.8rem !important;
+        background-color: #FFFDF8 !important;
     }
 
     div.stButton > button, div.stFormSubmitButton > button {
@@ -141,12 +92,6 @@ st.markdown(
     div.stButton > button:hover, div.stFormSubmitButton > button:hover {
         background: linear-gradient(135deg, #FF6B35 0%, #E85D2F 100%);
         color: white;
-    }
-
-    .stTextInput input {
-        border-radius: 12px !important;
-        border: 1.5px solid #FFD3A5 !important;
-        padding: 0.6rem !important;
     }
 
     .az-footer {
@@ -184,13 +129,84 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# Display the message if it exists (survives the rerun)
 if st.session_state["last_saved_message"]:
     st.success(st.session_state["last_saved_message"])
 
 # ----------------------------------------------------------------
-# Helpers
+# Smart Pricing & Extraction Helpers (Built-in)
 # ----------------------------------------------------------------
+def load_prices():
+    """Load prices from the JSON file created by the Price Manager."""
+    if os.path.exists(PRICES_FILE):
+        with open(PRICES_FILE, "r") as f:
+            return json.load(f)
+    return {}
+
+def find_best_price(item_name, smart_menu):
+    """Smart matching to handle plurals and partial matches."""
+    name = str(item_name).strip().lower()
+    
+    if name in smart_menu:
+        return smart_menu[name]
+    if name.endswith('s') and name[:-1] in smart_menu:
+        return smart_menu[name[:-1]]
+        
+    search_name = name[:-1] if name.endswith('s') else name
+    for menu_item, price in smart_menu.items():
+        if search_name in menu_item or menu_item in search_name:
+            return price
+    return 0.0
+
+def smart_extract_order(text):
+    """Advanced regex extractor that perfectly captures multiple items and calculates total."""
+    customer = "Walk-in"
+    status = "pending"
+    lower_text = text.lower()
+    
+    # 1. Extract Payment Status
+    if "unpaid" in lower_text:
+        status = "unpaid"
+    elif "paid" in lower_text:
+        status = "paid"
+        
+    # Remove status words from text to clean it up
+    clean_text = re.sub(r'\b(paid|unpaid|pending)\b', '', text, flags=re.IGNORECASE).strip()
+    
+    # 2. Extract Customer Name (Assumes first word is a name if it's not a number)
+    words = clean_text.split()
+    if words and not words[0].isdigit():
+        customer = words[0].capitalize()
+        # Remove customer name from the string so we only have items left
+        clean_text = clean_text[len(words[0]):].strip()
+        
+    # 3. Extract Items using Regex (Matches Number + Words)
+    items = []
+    # This pattern looks for a digit, optional 'x', and then words until it hits the next digit
+    pattern = r'(\d+)\s*[xX]?\s*([a-zA-Z]+(?:\s+[a-zA-Z]+)*)'
+    matches = re.finditer(pattern, clean_text)
+    
+    for match in matches:
+        qty = int(match.group(1))
+        item_name = match.group(2).strip().title()
+        if item_name:
+            items.append({"item": item_name, "quantity": qty})
+            
+    # 4. Auto-Calculate Total Payment
+    menu = load_prices()
+    smart_menu = {str(k).strip().lower(): float(v) for k, v in menu.items()}
+    
+    calculated_total = 0.0
+    for item in items:
+        unit_price = find_best_price(item["item"], smart_menu)
+        calculated_total += (unit_price * item["quantity"])
+            
+    return {
+        "customer": customer,
+        "payment_status": status,
+        "items": items,
+        "payment": calculated_total
+    }
+
 def safe_value(value):
     if value is None or (isinstance(value, str) and value.strip() == ""):
         return "Not provided"
@@ -250,31 +266,29 @@ def save_to_excel(order_dict, timestamp):
 # ----------------------------------------------------------------
 # Input card
 # ----------------------------------------------------------------
-st.markdown('<div class="az-card">', unsafe_allow_html=True)
 st.markdown("### 📝 Enter Order Details")
 
 with st.form(key="order_input_form", clear_on_submit=False):
-    order_text = st.text_input(
-        'Type the order exactly as received (e.g. "Ali 2 burgers 3 shawarmas 1 coke paid")',
-        placeholder="e.g. Sara 1 pizza 2 fries 3 drinks unpaid",
+    order_text = st.text_area(
+        'Type the order exactly as received:',
+        placeholder="e.g. Ali 2 burgers 3 shawarmas 1 coke paid",
+        height=120,
         key="order_text_input"
     )
     submitted = st.form_submit_button("🔍 Extract Order")
 
-st.markdown("</div>", unsafe_allow_html=True)
-
 # ----------------------------------------------------------------
-# Extraction (no auto-save)
+# Extraction Logic
 # ----------------------------------------------------------------
 if submitted:
-    # Clear the previous success message when a new extraction is started
     st.session_state["last_saved_message"] = None 
     
     if not order_text.strip():
         st.warning("⚠️ Please type an order before submitting.")
     else:
         try:
-            extracted = extract_order(order_text)
+            # Using the new smart extractor
+            extracted = smart_extract_order(order_text)
             st.session_state["pending_order"] = extracted
         except Exception as exc:
             st.error(f"😕 Sorry, we couldn't process that order. ({exc})")
@@ -284,15 +298,14 @@ if submitted:
 # ----------------------------------------------------------------
 if st.session_state.get("pending_order"):
     order = st.session_state["pending_order"]
-
-    st.markdown('<div class="az-card">', unsafe_allow_html=True)
+    
+    st.markdown("---")
     st.markdown("### ✏️ Review & Edit Order Before Saving")
 
-    # Editable top fields
+    # Editable top fields (Payment is now pre-filled with calculated total!)
     customer = st.text_input("Customer", value=safe_value(order.get("customer")))
-    payment = st.number_input("Payment", value=int(order.get("payment") or 0))
+    payment = st.number_input("Total Payment (PKR)", value=float(order.get("payment", 0.0)))
     
-    # Safely handle payment status index
     raw_status = str(order.get("payment_status", "paid")).lower()
     if raw_status not in ["paid", "unpaid", "pending"]:
         raw_status = "pending"
@@ -323,6 +336,8 @@ if st.session_state.get("pending_order"):
             )
         edited_items.append({"item": item_name, "quantity": qty})
 
+    st.markdown("<br>", unsafe_allow_html=True)
+
     # Confirm & Save + FULL CLEAR
     if st.button("✅ Confirm & Save"):
         final_order = {
@@ -336,23 +351,17 @@ if st.session_state.get("pending_order"):
 
         try:
             order_id = save_to_excel(final_order, timestamp)
-            
-            # 1. SET THE MESSAGE IN STATE SO IT SURVIVES
             st.session_state["last_saved_message"] = f"💾 Order #{order_id} saved successfully!"
 
-            # 2. FULL CLEAR: Delete session state keys to wipe out the form UI
             keys_to_clear = ["pending_order", "order_text_input"]
             for key in list(st.session_state.keys()):
                 if key in keys_to_clear or key.startswith("item_name_") or key.startswith("item_qty_"):
                     del st.session_state[key]
             
-            # 3. TRIGGER REFRESH
             st.rerun()
 
         except Exception as exc:
             st.error(f"⚠️ Saving failed: {exc}")
-
-    st.markdown("</div>", unsafe_allow_html=True)
 
 # ----------------------------------------------------------------
 # Footer
