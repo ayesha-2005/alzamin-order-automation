@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import os
+import json
 from datetime import datetime
 from fpdf import FPDF
 
@@ -26,14 +27,16 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- ENSURE MENU PRICES EXIST ---
-if "menu_prices" not in st.session_state:
-    st.session_state["menu_prices"] = {
-        "Burger": 150.0, "Chicken Burger": 250.0, "Small Shawarma": 150.0, 
-        "Big Shawarma": 200.0, "Double Anda (Egg) Burger": 200.0
-    }
-
 # --- HELPER FUNCTIONS ---
+PRICES_FILE = "prices.json"
+
+def load_prices():
+    """Load prices from the JSON file created by the Price Manager."""
+    if os.path.exists(PRICES_FILE):
+        with open(PRICES_FILE, "r") as f:
+            return json.load(f)
+    return {} # Return empty if no file exists yet
+
 def load_latest_order():
     file_path = "orders.xlsx"
     if not os.path.exists(file_path): return None
@@ -123,13 +126,22 @@ else:
     customer_name = order_df['Customer'].iloc[0]
     payment_status = order_df['Payment Status'].iloc[0].upper()
     
-    # --- DYNAMIC PRICING CALCULATION ---
-    # Lookup price from session state dictionary. Fallback to 0 if item not found.
-    menu = st.session_state["menu_prices"]
-    order_df['Unit Price'] = order_df['Item'].apply(lambda item: menu.get(item, 0.0))
+    # --- SMART DYNAMIC PRICING CALCULATION ---
+    menu = load_prices()
+    
+    # Make mapping smart (lowercase and strip spaces) so "burger" matches "Burger"
+    smart_menu = {str(k).strip().lower(): float(v) for k, v in menu.items()}
+    
+    # Create a normalized version of the order items to match against
+    normalized_items = order_df['Item'].astype(str).str.strip().str.lower()
+    
+    # Map the prices. If an item isn't in the list, default to 0.0
+    order_df['Unit Price'] = normalized_items.map(smart_menu).fillna(0.0)
     
     # Calculate Line Total = Unit Price * Quantity
     order_df['Line Total (PKR)'] = order_df['Unit Price'] * order_df['Quantity']
+    
+    # Calculate Grand Total
     total_amount = order_df['Line Total (PKR)'].sum()
     
     # Prepare display table

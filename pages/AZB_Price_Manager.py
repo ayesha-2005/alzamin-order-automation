@@ -1,5 +1,7 @@
 import streamlit as st
 import pandas as pd
+import json
+import os
 
 # --- SECURITY / ACCESS CONTROL ---
 if not st.session_state.get("logged_in") or st.session_state.get("current_role") != "admin":
@@ -12,53 +14,68 @@ st.set_page_config(
     layout="centered"
 )
 
-# --- CUSTOM CSS (Theme Match) ---
+PRICES_FILE = "prices.json"
+
+def load_prices():
+    """Load prices permanently from JSON file."""
+    if os.path.exists(PRICES_FILE):
+        with open(PRICES_FILE, "r") as f:
+            return json.load(f)
+    else:
+        # Default prices
+        defaults = {
+            "Burger": 150.0,
+            "Chicken Burger": 250.0,
+            "Small Shawarma": 150.0,
+            "Big Shawarma": 200.0,
+            "Double Anda Burger": 200.0,
+            "Fries": 100.0,
+            "Drink": 80.0
+        }
+        save_prices(defaults)
+        return defaults
+
+def save_prices(prices_dict):
+    """Save prices permanently to JSON file."""
+    with open(PRICES_FILE, "w") as f:
+        json.dump(prices_dict, f, indent=4)
+
+# --- CUSTOM CSS ---
 st.markdown("""
     <style>
     h1, h2, h3, h4, h5, h6 { color: #f47b20; font-family: 'Segoe UI', sans-serif; text-align: center; }
     .stApp { background-color: #fdfbf9; }
-    
     .theme-card {
         background:#ffffff; border:1px solid #f1e4d8; border-radius:18px;
         padding:22px; box-shadow:0 8px 30px rgba(244,123,32,0.08); margin-bottom: 20px;
     }
-    
     .stButton>button {
         background-color: #f47b20; color: white; border-radius: 8px; border: none;
         padding: 10px 24px; font-weight: bold; width: 100%; transition: all 0.3s ease;
     }
     .stButton>button:hover { background-color: #d96314; color: white; }
-    hr { border-color: #f1e4d8; }
     </style>
 """, unsafe_allow_html=True)
-
-# --- INITIALIZE MENU PRICES ---
-if "menu_prices" not in st.session_state:
-    st.session_state["menu_prices"] = {
-        "Burger": 150.0,
-        "Chicken Burger": 250.0,
-        "Small Shawarma": 150.0,
-        "Big Shawarma": 200.0,
-        "Double Anda (Egg) Burger": 200.0
-    }
 
 # --- HEADER ---
 st.markdown("""
 <div class="theme-card">
     <h1 style='margin-top:0;'>💰 Price Management</h1>
-    <p style='text-align:center; color:#555;'>Update menu prices dynamically. These prices will be used to calculate invoice totals.</p>
+    <p style='text-align:center; color:#555;'>Update menu prices here. These will permanently save and calculate your invoices!</p>
 </div>
 """, unsafe_allow_html=True)
 
 # --- PRICE EDITOR LOGIC ---
+menu_prices = load_prices()
+
 # Convert dict to DataFrame for the data editor
 prices_df = pd.DataFrame(
-    list(st.session_state["menu_prices"].items()), 
+    list(menu_prices.items()), 
     columns=["Item Name", "Price (PKR)"]
 )
 
 st.markdown("### 📋 Edit Menu Prices")
-st.info("💡 You can edit prices directly, add new items by clicking the bottom row, or select rows to delete them.")
+st.info("💡 Edit prices directly, add new items at the bottom, or select rows to delete them.")
 
 # Editable table
 edited_df = st.data_editor(
@@ -75,14 +92,13 @@ st.markdown("<br>", unsafe_allow_html=True)
 
 # Save Button
 if st.button("💾 Save Prices"):
-    # Convert DataFrame back to dictionary
-    # Drop rows where item name might be empty
+    # Clean data (remove empty rows)
     cleaned_df = edited_df.dropna(subset=["Item Name"])
     cleaned_df = cleaned_df[cleaned_df["Item Name"].str.strip() != ""]
     
-    # Save to session state
+    # Convert back to dict and save
     new_prices_dict = dict(zip(cleaned_df["Item Name"], cleaned_df["Price (PKR)"]))
-    st.session_state["menu_prices"] = new_prices_dict
+    save_prices(new_prices_dict)
     
-    st.success("✅ Menu prices updated successfully! Invoices will now use these prices.")
+    st.success("✅ Menu prices updated and saved permanently! Invoices will now use these prices.")
     st.balloons()
