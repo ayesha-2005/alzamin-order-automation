@@ -23,14 +23,14 @@ Supported example formats:
 Field rules:
     customer        -> first capitalized word in the text
     items           -> repeating <number> <word(s)> pairs found
-                        before the payment number; each becomes
-                        {"item": ..., "quantity": ...}
+                       before the payment number; each becomes
+                       {"item": ..., "quantity": ...}
     payment         -> the number immediately followed by 'rs',
-                        otherwise the last number before the
-                        payment-status word (or the last number
-                        overall if no status word is found)
+                       otherwise the last number before the
+                       payment-status word (or the last number
+                       overall if no status word is found)
     payment_status  -> last word matching {paid, payed, pending,
-                        unpaid, notpaid}
+                       unpaid, notpaid}
 
 extract_order() always returns a single dict (never a list).
 Any field that can't be found is None ("items" is [] when no
@@ -108,8 +108,10 @@ def _extract_items(tokens, numeric_indices, payment_idx, status_idx):
     both single-word ("burgers") and multi-word ("Big shawarmas")
     item names.
     """
-    item_number_indices = [i for i in numeric_indices if i != payment_idx and
-                            (payment_idx is None or i < payment_idx)]
+    item_number_indices = [
+        i for i in numeric_indices 
+        if i != payment_idx and (payment_idx is None or i < payment_idx)
+    ]
 
     items = []
     for pos, idx in enumerate(item_number_indices):

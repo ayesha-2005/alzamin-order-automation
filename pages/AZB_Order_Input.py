@@ -4,10 +4,12 @@ pages/1_📦_Order_Input.py
 AL Zamin Bakers & Fast Food - Order Automation System
 Multi-page dashboard | Page: Order Input
 
-Updated for editable review + confirm & save workflow + full clear after save + persistent success message.
+Uses backend extract.py + auto-calculates payment totals using prices.json.
 """
 
 import sys
+import json
+import os
 from datetime import datetime
 from pathlib import Path
 
@@ -16,7 +18,7 @@ import streamlit as st
 
 # Protect page
 if not st.session_state.get("logged_in"):
-    st.switch_page("app.py") # Kicks them back to login
+    st.switch_page("app.py")
 
 # ----------------------------------------------------------------
 # Make sure the project root (parent of /pages) is importable
@@ -37,6 +39,7 @@ st.set_page_config(
 )
 
 EXCEL_FILE = ROOT_DIR / "orders.xlsx"
+PRICES_FILE = ROOT_DIR / "prices.json"
 EXCEL_COLUMNS = ["Order ID", "Customer", "Item", "Quantity", "Payment", "Payment Status", "Timestamp"]
 
 # ----------------------------------------------------------------
@@ -70,7 +73,6 @@ st.markdown(
         margin: 0;
     }
 
-    /* Style the new larger Text Area to match the theme */
     .stTextArea textarea, .stTextInput input {
         border-radius: 12px !important;
         border: 1.5px solid #FFD3A5 !important;
@@ -128,13 +130,40 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# Display the message if it exists (survives the rerun)
 if st.session_state["last_saved_message"]:
     st.success(st.session_state["last_saved_message"])
 
 # ----------------------------------------------------------------
-# Helpers
+# Pricing Calculation Helpers
 # ----------------------------------------------------------------
+def load_prices():
+    if os.path.exists(PRICES_FILE):
+        with open(PRICES_FILE, "r") as f:
+            return json.load(f)
+    return {}
+
+def find_best_price(item_name, smart_menu):
+    name = str(item_name).strip().lower()
+    if name in smart_menu:
+        return smart_menu[name]
+    if name.endswith('s') and name[:-1] in smart_menu:
+        return smart_menu[name[:-1]]
+        
+    search_name = name[:-1] if name.endswith('s') else name
+    for menu_item, price in smart_menu.items():
+        if search_name in menu_item or menu_item in search_name:
+            return price
+    return 0.0
+
+def calculate_order_total(items):
+    menu = load_prices()
+    smart_menu = {str(k).strip().lower(): float(v) for k, v in menu.items()}
+    total = 0.0
+    for item in items:
+        unit_price = find_best_price(item.get("item"), smart_menu)
+        total += (unit_price * item.get("quantity", 0))
+    return total
+
 def safe_value(value):
     if value is None or (isinstance(value, str) and value.strip() == ""):
         return "Not provided"
@@ -192,51 +221,52 @@ def save_to_excel(order_dict, timestamp):
     return order_id
 
 # ----------------------------------------------------------------
-# Input card (Removed confusing raw HTML wrappers)
+# Input card
 # ----------------------------------------------------------------
 st.markdown("### 📝 Enter Order Details")
 
 with st.form(key="order_input_form", clear_on_submit=False):
-    # Upgraded to text_area for better visibility
     order_text = st.text_area(
         'Type the order exactly as received:',
-        placeholder="e.g. Ali 2 burgers 3 shawarmas 1 coke 1500 paid",
+        placeholder="e.g. Ali 2 burgers 3 shawarmas 1 coke paid",
         height=120,
         key="order_text_input"
     )
     submitted = st.form_submit_button("🔍 Extract Order")
 
 # ----------------------------------------------------------------
-# Extraction (no auto-save)
+# Extraction Logic
 # ----------------------------------------------------------------
 if submitted:
-    # Clear the previous success message when a new extraction is started
     st.session_state["last_saved_message"] = None 
     
     if not order_text.strip():
         st.warning("⚠️ Please type an order before submitting.")
     else:
         try:
+            # Calls your clean extract.py function
             extracted = extract_order(order_text)
             st.session_state["pending_order"] = extracted
         except Exception as exc:
             st.error(f"😕 Sorry, we couldn't process that order. ({exc})")
 
 # ----------------------------------------------------------------
-# Editable Review Section (Removed confusing raw HTML wrappers)
+# Editable Review Section
 # ----------------------------------------------------------------
 if st.session_state.get("pending_order"):
     order = st.session_state["pending_order"]
     
+    # Auto-calculate payment based on items and prices.json
+    auto_total = calculate_order_total(order.get("items", []))
+
     st.markdown("---")
     st.markdown("### ✏️ Review & Edit Order Before Saving")
 
-    # Editable top fields
     customer = st.text_input("Customer", value=safe_value(order.get("customer")))
-    payment = st.number_input("Payment", value=int(order.get("payment") or 0))
+    # Pre-fills the calculated total automatically!
+    payment = st.number_input("Total Payment (PKR)", value=float(auto_total), step=10.0)
     
-    # Safely handle payment status index
-    raw_status = str(order.get("payment_status", "paid")).lower()
+    raw_status = str(order.get("payment_status", "pending")).lower()
     if raw_status not in ["paid", "unpaid", "pending"]:
         raw_status = "pending"
     status_index = ["paid", "unpaid", "pending"].index(raw_status)
@@ -268,7 +298,6 @@ if st.session_state.get("pending_order"):
 
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # Confirm & Save + FULL CLEAR
     if st.button("✅ Confirm & Save"):
         final_order = {
             "customer": customer,
@@ -281,17 +310,13 @@ if st.session_state.get("pending_order"):
 
         try:
             order_id = save_to_excel(final_order, timestamp)
-            
-            # 1. SET THE MESSAGE IN STATE SO IT SURVIVES
             st.session_state["last_saved_message"] = f"💾 Order #{order_id} saved successfully!"
 
-            # 2. FULL CLEAR: Delete session state keys to wipe out the form UI
             keys_to_clear = ["pending_order", "order_text_input"]
             for key in list(st.session_state.keys()):
                 if key in keys_to_clear or key.startswith("item_name_") or key.startswith("item_qty_"):
                     del st.session_state[key]
             
-            # 3. TRIGGER REFRESH
             st.rerun()
 
         except Exception as exc:
