@@ -35,7 +35,7 @@ def load_prices():
     if os.path.exists(PRICES_FILE):
         with open(PRICES_FILE, "r") as f:
             return json.load(f)
-    return {} # Return empty if no file exists yet
+    return {} 
 
 def load_latest_order():
     file_path = "orders.xlsx"
@@ -54,6 +54,29 @@ def load_latest_order():
     except Exception as e:
         st.error(f"Error loading data: {e}")
         return None
+
+def find_best_price(item_name, smart_menu):
+    """Smart matching to handle plurals and partial matches."""
+    name = str(item_name).strip().lower()
+    
+    # 1. Exact match
+    if name in smart_menu:
+        return smart_menu[name]
+        
+    # 2. Handle simple plurals (e.g., 'burgers' -> 'burger')
+    if name.endswith('s') and name[:-1] in smart_menu:
+        return smart_menu[name[:-1]]
+        
+    # 3. Partial match (e.g., 'shawarmas' finding 'small shawarma')
+    # Remove 's' from order item for better partial matching
+    search_name = name[:-1] if name.endswith('s') else name
+    
+    for menu_item, price in smart_menu.items():
+        if search_name in menu_item or menu_item in search_name:
+            return price
+            
+    # If absolutely no match is found, return 0.0
+    return 0.0
 
 def create_pdf(order_df, inv_number, inv_date, customer_name, payment_status, total_amount):
     pdf = FPDF()
@@ -128,15 +151,10 @@ else:
     
     # --- SMART DYNAMIC PRICING CALCULATION ---
     menu = load_prices()
-    
-    # Make mapping smart (lowercase and strip spaces) so "burger" matches "Burger"
     smart_menu = {str(k).strip().lower(): float(v) for k, v in menu.items()}
     
-    # Create a normalized version of the order items to match against
-    normalized_items = order_df['Item'].astype(str).str.strip().str.lower()
-    
-    # Map the prices. If an item isn't in the list, default to 0.0
-    order_df['Unit Price'] = normalized_items.map(smart_menu).fillna(0.0)
+    # Apply the smart matching function to each item in the order
+    order_df['Unit Price'] = order_df['Item'].apply(lambda x: find_best_price(x, smart_menu))
     
     # Calculate Line Total = Unit Price * Quantity
     order_df['Line Total (PKR)'] = order_df['Unit Price'] * order_df['Quantity']
@@ -172,7 +190,7 @@ else:
     """, unsafe_allow_html=True)
     
     st.markdown("#### 🛒 Order Details")
-    st.table(display_df)
+    st.table(display_df.style.format({"Unit Price": "{:.2f}", "Line Total (PKR)": "{:.2f}"}))
     
     st.markdown(f"""
     <div style="background:#ffffff;border:1px solid #f1e4d8;border-radius:18px;padding:22px;box-shadow:0 8px 30px rgba(244,123,32,0.08); margin-top: 20px;">
