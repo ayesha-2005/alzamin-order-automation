@@ -39,7 +39,17 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 def load_all_orders():
-    return db.get_all_orders_df()
+    df = db.get_all_orders_df()
+    if df is None or df.empty or "Order ID" not in df.columns: 
+        return None
+    try:
+        df['Quantity'] = pd.to_numeric(df['Quantity'], errors='coerce').fillna(0)
+        # Ensure timestamp is explicitly converted to datetime, handling string formats safely
+        df['Timestamp'] = pd.to_datetime(df['Timestamp'], errors='coerce')
+        return df
+    except Exception as e:
+        st.error(f"Error loading data: {e}")
+        return None
 
 def search_in_menu(query, menu_item):
     query_parts = query.split()
