@@ -4,4 +4,4 @@ openpyxl
 python-dotenv
 matplotlib
 fpdf
-openpyxl
+supabase

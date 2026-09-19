@@ -1,6 +1,5 @@
 import streamlit as st
-import json
-import os
+import db
 
 # --- PAGE CONFIGURATION ---
 st.set_page_config(
@@ -9,33 +8,8 @@ st.set_page_config(
     layout="centered"
 )
 
-# --- FILE CONFIGURATION ---
-USERS_FILE = "users.json"
-
-def load_users():
-    """Loads users from a JSON file. Creates defaults if file doesn't exist."""
-    if os.path.exists(USERS_FILE):
-        with open(USERS_FILE, "r") as f:
-            return json.load(f)
-    else:
-        # Default users
-        defaults = {
-            "ayesha": {"password": "Ayesha@910", "role": "admin"},
-            "staff": {"password": "staff@Alzamin", "role": "staff"}
-        }
-        save_users(defaults)
-        return defaults
-
-def save_users(users_dict):
-    """Saves the user dictionary to the JSON file permanently."""
-    with open(USERS_FILE, "w") as f:
-        json.dump(users_dict, f, indent=4)
-
 # --- INITIALIZE SESSION STATE ---
 def init_session_state():
-    if "users" not in st.session_state:
-        st.session_state["users"] = load_users()
-    
     if "logged_in" not in st.session_state:
         st.session_state["logged_in"] = False
     if "current_user" not in st.session_state:
@@ -81,15 +55,15 @@ def login_page():
     
     with st.form("login_form"):
         username = st.text_input("Username").strip().lower()
-        password = st.text_input("Password", type="password")
+        password = st.text_input("Password", type="password").strip()
         submit = st.form_submit_button("Secure Login", use_container_width=True)
         
         if submit:
-            # Always reload users from file just in case it was updated
-            st.session_state["users"] = load_users()
-            users = st.session_state["users"]
-            
-            if username in users and users[username]["password"] == password:
+          if submit:
+            # Fetch latest users from Supabase securely
+            users = db.get_users()
+            # Verify user exists and password hash matches
+            if username in users and users[username]["password"] == db.hash_password(password):
                 st.session_state["logged_in"] = True
                 st.session_state["current_user"] = username
                 st.session_state["current_role"] = users[username]["role"]
@@ -114,21 +88,19 @@ def admin_panel():
     </div>
     """, unsafe_allow_html=True)
     
-    # Display persistent messages
     if st.session_state.get("admin_msg"):
         st.success(st.session_state["admin_msg"])
-        st.session_state["admin_msg"] = None # Clear it after showing
+        st.session_state["admin_msg"] = None 
     
-    # 1. View Users
+    # Always pull fresh users from DB
+    current_users = db.get_users()
+    
     st.markdown("#### 👥 Current Users")
-    display_users = []
-    for user, details in st.session_state["users"].items():
-        display_users.append({"Username": user, "Role": details["role"].capitalize()})
+    display_users = [{"Username": u, "Role": d["role"].capitalize()} for u, d in current_users.items()]
     st.dataframe(display_users, use_container_width=True, hide_index=True)
     
     st.markdown("<br>", unsafe_allow_html=True)
     
-    # 2. Add / Remove Users
     col1, col2 = st.columns(2)
     
     with col1:
@@ -141,31 +113,25 @@ def admin_panel():
             if st.form_submit_button("Add User", use_container_width=True):
                 if not new_username or not new_password:
                     st.warning("⚠️ Username and Password are required.")
-                elif new_username in st.session_state["users"]:
+                elif new_username in current_users:
                     st.error(f"⚠️ User '{new_username}' already exists.")
                 else:
-                    # Update state AND save to file permanently
-                    st.session_state["users"][new_username] = {"password": new_password, "role": new_role}
-                    save_users(st.session_state["users"])
-                    
+                    db.add_user(new_username, new_password, new_role)
                     st.session_state["admin_msg"] = f"✅ User '{new_username}' added permanently!"
                     st.rerun()
                     
     with col2:
         st.markdown("**🗑️ Remove User**")
         with st.form("remove_user_form"):
-            user_to_remove = st.selectbox("Select User", options=list(st.session_state["users"].keys()))
+            user_to_remove = st.selectbox("Select User", options=list(current_users.keys()))
             
             if st.form_submit_button("Remove User", use_container_width=True):
-                if user_to_remove == "ayesha":
-                    st.error("⚠️ Cannot remove the master admin ('ayesha').")
+                if user_to_remove == "ashy":
+                    st.error("⚠️ Cannot remove the master admin ('ashy').")
                 elif user_to_remove == st.session_state["current_user"]:
                     st.error("⚠️ You cannot delete your own active account.")
                 else:
-                    # Delete from state AND save to file permanently
-                    del st.session_state["users"][user_to_remove]
-                    save_users(st.session_state["users"])
-                    
+                    db.remove_user(user_to_remove)
                     st.session_state["admin_msg"] = f"✅ User '{user_to_remove}' removed permanently!"
                     st.rerun()
 
@@ -173,7 +139,6 @@ def admin_panel():
 def landing_page():
     inject_custom_css(hide_sidebar=False)
     
-    # Sidebar Profile & Logout
     st.sidebar.markdown(f"### 👤 Profile")
     st.sidebar.markdown(f"**User:** {st.session_state['current_user']}")
     st.sidebar.markdown(f"**Role:** {st.session_state['current_role'].capitalize()}")
@@ -183,7 +148,6 @@ def landing_page():
     st.sidebar.markdown("---")
     st.sidebar.info("👈 **Hint:** Use the sidebar menu above to navigate between system modules.")
     
-    # Main Welcome Content
     st.markdown("""
     <div class="theme-card" style="text-align: center;">
         <h1 style='margin-top:0;'>👋 Welcome to AL Zamin Bakers & Fast Food</h1>
@@ -193,7 +157,6 @@ def landing_page():
     </div>
     """, unsafe_allow_html=True)
     
-    # Show Admin Panel ONLY if role is admin
     if st.session_state["current_role"] == "admin":
         admin_panel()
     else:
