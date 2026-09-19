@@ -39,19 +39,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 def load_all_orders():
-    file_path = "orders.xlsx"
-    if not os.path.exists(file_path): 
-        return None
-    try:
-        df = pd.read_excel(file_path)
-        if df.empty or "Order ID" not in df.columns: 
-            return None
-        df['Quantity'] = pd.to_numeric(df['Quantity'], errors='coerce').fillna(0)
-        df['Timestamp'] = pd.to_datetime(df['Timestamp'], errors='coerce')
-        return df
-    except Exception as e:
-        st.error(f"Error loading data: {e}")
-        return None
+    return db.get_all_orders_df()
 
 def search_in_menu(query, menu_item):
     query_parts = query.split()

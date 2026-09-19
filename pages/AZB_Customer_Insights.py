@@ -3,7 +3,7 @@ import pandas as pd
 import os
 import matplotlib.pyplot as plt
 from datetime import datetime
-import streamlit as st
+import db
 # Protect page + Enforce Role
 if not st.session_state.get("logged_in") or st.session_state.get("current_role") != "admin":
     st.switch_page("app.py") # Kicks non-admins and logged-out users back to home
@@ -66,38 +66,26 @@ st.markdown("""
 
 # --- HELPER FUNCTIONS ---
 def load_data():
-    """Loads the orders data and handles missing files/values."""
-    file_path = "orders.xlsx"
-    if not os.path.exists(file_path):
+    df = db.get_all_orders_df()
+    if df is None or df.empty:
         return None
     try:
-        df = pd.read_excel(file_path)
-        if df.empty:
-            return None
-        
-        # Clean and convert data types
         df['Quantity'] = pd.to_numeric(df['Quantity'], errors='coerce').fillna(0)
         df['Payment'] = pd.to_numeric(df['Payment'], errors='coerce').fillna(0)
         df['Timestamp'] = pd.to_datetime(df['Timestamp'], errors='coerce')
-        
-        # Standardize Payment Status for accurate filtering
+        if 'Customer' in df.columns:
+            df['Customer'] = df['Customer'].astype(str).str.strip()
+            df = df[df['Customer'] != 'nan']
         if 'Payment Status' in df.columns:
             df['Payment Status Clean'] = df['Payment Status'].astype(str).str.strip().str.lower()
         else:
             df['Payment Status Clean'] = 'unknown'
-            
-        # Ensure Customer column exists and clean it
-        if 'Customer' in df.columns:
-            df['Customer'] = df['Customer'].astype(str).str.strip()
-            df = df[df['Customer'] != 'nan'] # Remove empty parses
-        else:
-            return None
-            
+        if 'Item' in df.columns and 'Category' not in df.columns:
+            df['Category'] = df['Item'].apply(assign_category) if 'assign_category' in globals() else 'Fast Food'
         return df
     except Exception as e:
         st.error(f"Error loading data: {e}")
         return None
-
 # --- HEADER ---
 st.title("👤 Customer Insights Dashboard")
 st.markdown(f"<p style='text-align: center; color: #888;'>Insights generated at: {datetime.now().strftime('%Y-%m-%d %I:%M %p')}</p>", unsafe_allow_html=True)

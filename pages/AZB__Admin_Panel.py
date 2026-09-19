@@ -2,8 +2,9 @@ import streamlit as st
 import pandas as pd
 import os
 import io
+import db
 from datetime import datetime
-import streamlit as st
+
 # Protect page + Enforce Role
 if not st.session_state.get("logged_in") or st.session_state.get("current_role") != "admin":
     st.switch_page("app.py") # Kicks non-admins and logged-out users back to home
@@ -56,15 +57,12 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --- HELPER FUNCTIONS ---
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=10)
 def load_data():
-    file_path = "orders.xlsx"
-    if not os.path.exists(file_path):
+    df = db.get_all_orders_df()
+    if df is None or df.empty:
         return None
     try:
-        df = pd.read_excel(file_path)
-        if df.empty: return None
-        
         df['Quantity'] = pd.to_numeric(df['Quantity'], errors='coerce').fillna(0)
         df['Payment'] = pd.to_numeric(df['Payment'], errors='coerce').fillna(0)
         df['Timestamp'] = pd.to_datetime(df['Timestamp'], errors='coerce')
@@ -81,6 +79,14 @@ def load_data():
         st.error(f"Error loading data: {e}")
         return None
 
+def clear_all_orders():
+    """Clears orders from Supabase table."""
+    try:
+        db.supabase.table("orders").delete().neq("id", 0).execute()
+        load_data.clear()
+    except Exception as e:
+        st.error(f"Error clearing database: {e}")
+
 def convert_df_to_excel(df):
     """Converts a pandas DataFrame to an Excel byte string in memory."""
     output = io.BytesIO()
@@ -89,13 +95,6 @@ def convert_df_to_excel(df):
         df.to_excel(writer, index=False, sheet_name='Orders')
     processed_data = output.getvalue()
     return processed_data
-
-def clear_all_orders():
-    """Overwrites orders.xlsx with an empty DataFrame containing the correct columns."""
-    columns = ['Customer', 'Item', 'Quantity', 'Payment', 'Payment Status', 'Timestamp']
-    df_empty = pd.DataFrame(columns=columns)
-    df_empty.to_excel('orders.xlsx', index=False)
-    load_data.clear()
 
 # --- HEADER ---
 st.title("⚙️ Admin Panel")

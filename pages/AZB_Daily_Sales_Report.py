@@ -4,10 +4,12 @@ from pathlib import Path
  
 import pandas as pd
 import streamlit as st
-import streamlit as st
+import db
+
 # Protect page + Enforce Role
 if not st.session_state.get("logged_in") or st.session_state.get("current_role") != "admin":
     st.switch_page("app.py") # Kicks non-admins and logged-out users back to home
+
 # ----------------------------------------------------------------
 # Page config
 # ----------------------------------------------------------------
@@ -16,9 +18,6 @@ st.set_page_config(
     page_icon="📊",
     layout="centered",
 )
- 
-ROOT_DIR = Path(__file__).resolve().parent.parent
-EXCEL_FILE = ROOT_DIR / "orders.xlsx"
  
 # ----------------------------------------------------------------
 # Custom CSS - same orange / cream branded theme as the rest of the app
@@ -98,109 +97,101 @@ st.markdown(
 st.markdown('<div class="az-card">', unsafe_allow_html=True)
 st.markdown("### 📊 Today's Summary")
  
-if not os.path.exists(EXCEL_FILE):
+report_df = db.get_all_orders_df()
+
+if report_df is None or report_df.empty:
     st.info("No orders found yet. Daily report will appear once orders are saved.")
+elif "Order ID" not in report_df.columns:
+    st.error(
+        "⚠️ 'Order ID' column not found in database. "
+        "This report needs orders saved by the updated Order Input page."
+    )
 else:
-    report_df = None
-    try:
-        report_df = pd.read_excel(EXCEL_FILE)
-    except Exception as exc:
-        st.error(f"⚠️ Could not read {EXCEL_FILE.name}: {exc}")
+    # Keep only today's rows
+    report_df["Timestamp"] = pd.to_datetime(report_df["Timestamp"], errors="coerce")
+    today = datetime.now().date()
+    today_df = report_df[report_df["Timestamp"].dt.date == today].copy()
  
-    if report_df is None or report_df.empty:
-        st.info("No orders found yet. Daily report will appear once orders are saved.")
-    elif "Order ID" not in report_df.columns:
-        st.error(
-            "⚠️ 'Order ID' column not found in orders.xlsx. "
-            "This report needs orders saved by the updated Order Input page."
-        )
+    if today_df.empty:
+        st.info("No orders recorded today yet. Check back after some orders come in.")
     else:
-        # Keep only today's rows
-        report_df["Timestamp"] = pd.to_datetime(report_df["Timestamp"], errors="coerce")
-        today = datetime.now().date()
-        today_df = report_df[report_df["Timestamp"].dt.date == today].copy()
+        # Normalize payment status so "payed"/"notpaid" fold into paid/unpaid
+        def _normalize_status(status):
+            status = str(status).strip().lower()
+            if status in ("paid", "payed"):
+                return "paid"
+            if status in ("unpaid", "notpaid"):
+                return "unpaid"
+            if status == "pending":
+                return "pending"
+            return status
  
-        if today_df.empty:
-            st.info("No orders recorded today yet. Check back after some orders come in.")
-        else:
-            # Normalize payment status so "payed"/"notpaid" fold into paid/unpaid
-            def _normalize_status(status):
-                status = str(status).strip().lower()
-                if status in ("paid", "payed"):
-                    return "paid"
-                if status in ("unpaid", "notpaid"):
-                    return "unpaid"
-                if status == "pending":
-                    return "pending"
-                return status
+        today_df["_status_norm"] = today_df["Payment Status"].apply(_normalize_status)
  
-            today_df["_status_norm"] = today_df["Payment Status"].apply(_normalize_status)
+        # One order = one Order ID, no matter how many item rows it has.
+        # De-duplicate BEFORE counting orders or summing revenue so a
+        # 3-item order isn't counted (or paid) three times over.
+        orders_unique = today_df.drop_duplicates(subset=["Order ID"]).copy()
  
-            # One order = one Order ID, no matter how many item rows it has.
-            # De-duplicate BEFORE counting orders or summing revenue so a
-            # 3-item order isn't counted (or paid) three times over.
-            orders_unique = today_df.drop_duplicates(subset=["Order ID"]).copy()
+        paid_mask = orders_unique["_status_norm"] == "paid"
+        unpaid_mask = orders_unique["_status_norm"] == "unpaid"
+        pending_mask = orders_unique["_status_norm"] == "pending"
  
-            paid_mask = orders_unique["_status_norm"] == "paid"
-            unpaid_mask = orders_unique["_status_norm"] == "unpaid"
-            pending_mask = orders_unique["_status_norm"] == "pending"
+        total_orders = len(orders_unique)
+        total_revenue = pd.to_numeric(orders_unique.loc[paid_mask, "Payment"], errors="coerce").sum()
+        paid_count = int(paid_mask.sum())
+        unpaid_count = int(unpaid_mask.sum())
+        pending_count = int(pending_mask.sum())
  
-            total_orders = len(orders_unique)
-            total_revenue = pd.to_numeric(orders_unique.loc[paid_mask, "Payment"], errors="coerce").sum()
-            paid_count = int(paid_mask.sum())
-            unpaid_count = int(unpaid_mask.sum())
-            pending_count = int(pending_mask.sum())
+        # --- Key metrics ---
+        m1, m2, m3, m4, m5 = st.columns(5)
+        m1.metric("🧾 Total Orders", total_orders)
+        m2.metric("💰 Revenue (Paid)", f"Rs {total_revenue:,.0f}")
+        m3.metric("✅ Paid", paid_count)
+        m4.metric("⏳ Pending", pending_count)
+        m5.metric("❌ Unpaid", unpaid_count)
  
-            # --- Key metrics ---
-            m1, m2, m3, m4, m5 = st.columns(5)
-            m1.metric("🧾 Total Orders", total_orders)
-            m2.metric("💰 Revenue (Paid)", f"Rs {total_revenue:,.0f}")
-            m3.metric("✅ Paid", paid_count)
-            m4.metric("⏳ Pending", pending_count)
-            m5.metric("❌ Unpaid", unpaid_count)
+        st.markdown("<br>", unsafe_allow_html=True)
  
-            st.markdown("<br>", unsafe_allow_html=True)
+        # --- Top 5 items sold today (uses every item row) ---
+        col_left, col_right = st.columns(2)
  
-            # --- Top 5 items sold today (uses every item row - this is
-            #     exactly the level items live at, no de-duplication needed) ---
-            col_left, col_right = st.columns(2)
+        items_df = today_df.copy()
+        items_df["Quantity"] = pd.to_numeric(items_df["Quantity"], errors="coerce").fillna(0)
+        top_items = (
+            items_df.groupby("Item")["Quantity"]
+            .sum()
+            .sort_values(ascending=False)
+            .head(5)
+            .reset_index()
+        )
+        top_items.columns = ["Item", "Quantity Sold"]
  
-            items_df = today_df.copy()
-            items_df["Quantity"] = pd.to_numeric(items_df["Quantity"], errors="coerce").fillna(0)
-            top_items = (
-                items_df.groupby("Item")["Quantity"]
-                .sum()
-                .sort_values(ascending=False)
-                .head(5)
-                .reset_index()
-            )
-            top_items.columns = ["Item", "Quantity Sold"]
+        # --- Top 5 customers by number of ORDERS ---
+        top_customers = (
+            orders_unique.groupby("Customer")["Order ID"]
+            .nunique()
+            .sort_values(ascending=False)
+            .head(5)
+            .reset_index(name="Total Orders")
+        )
  
-            # --- Top 5 customers by number of ORDERS (not item rows) ---
-            top_customers = (
-                orders_unique.groupby("Customer")["Order ID"]
-                .nunique()
-                .sort_values(ascending=False)
-                .head(5)
-                .reset_index(name="Total Orders")
-            )
+        with col_left:
+            st.markdown("#### 🍽️ Top 5 Items Sold")
+            st.dataframe(top_items, use_container_width=True, hide_index=True)
  
-            with col_left:
-                st.markdown("#### 🍽️ Top 5 Items Sold")
-                st.dataframe(top_items, use_container_width=True, hide_index=True)
+        with col_right:
+            st.markdown("#### 👥 Top 5 Customers")
+            st.dataframe(top_customers, use_container_width=True, hide_index=True)
  
-            with col_right:
-                st.markdown("#### 👥 Top 5 Customers")
-                st.dataframe(top_customers, use_container_width=True, hide_index=True)
+        # --- Bar chart of item quantities ---
+        if not top_items.empty:
+            st.markdown("#### 📈 Item Quantity Chart")
+            chart_data = top_items.set_index("Item")["Quantity Sold"]
+            st.bar_chart(chart_data)
  
-            # --- Bar chart of item quantities ---
-            if not top_items.empty:
-                st.markdown("#### 📈 Item Quantity Chart")
-                chart_data = top_items.set_index("Item")["Quantity Sold"]
-                st.bar_chart(chart_data)
- 
-            # --- Report generation timestamp ---
-            st.caption(f"🕒 Report generated at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        # --- Report generation timestamp ---
+        st.caption(f"🕒 Report generated at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
  
 st.markdown("</div>", unsafe_allow_html=True)
  
@@ -216,4 +207,3 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
- 
